@@ -22,7 +22,7 @@ static inline bool single_tile(unsigned short tile) {
     1 - column
     2 - box
 */
-unsigned int quick_offset(unsigned int type, unsigned int main_index,
+unsigned int grid_offset(unsigned int type, unsigned int main_index,
     unsigned int index) {
   assert(type < 3);
   switch (type) {
@@ -34,11 +34,13 @@ unsigned int quick_offset(unsigned int type, unsigned int main_index,
       return 27 * (main_index / 3) + 3 * (main_index % 3)
         + 9 * (index / 3) + (index % 3);
   }
+  assert(false);
 }
 
 void section_eliminate(struct sudoku_grid* grid, unsigned int type,
     unsigned int index) {
-  assert(row < 9);
+  assert(index < 9);
+  assert(type < 3);
 
   unsigned short tile = TILE_NONE;
   for (unsigned int i = 0; i < 9; ++i) {
