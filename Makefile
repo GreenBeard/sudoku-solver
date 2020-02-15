@@ -13,7 +13,7 @@ help:
 	$(NOECHO)echo "  \"make clean\" - cleans the build files"
 
 build/%.o: src/%.c build_dir
-	$(CC) -O0 -std=c99 -fasm -g -Wvla -Wall -Wwrite-strings -pedantic -D_POSIX_C_SOURCE=200112L -D_XOPEN_SOURCE=700 -c $< -o $@
+	$(CC) -O2 -std=c99 -fasm -fno-omit-frame-pointer -g -Wvla -Wall -Wwrite-strings -pedantic -D_POSIX_C_SOURCE=200112L -D_XOPEN_SOURCE=700 -c $< -o $@
 
 bin/$(TARGET): bin_dir
 	$(CC) $(build_objects) -o $@ $(LIBS)

@@ -29,6 +29,8 @@ enum sudoku_row {
 };
 
 void print_sudoku_row(enum sudoku_row row, bool bold_row) {
+  assert(row == sudoku_row_top || row == sudoku_row_middle
+    || row == sudoku_row_bottom);
   printf("  ");
   /* Enable box-drawing alternative character set */
   printf("%c(0", VT100_ESCAPE);
