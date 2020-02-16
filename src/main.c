@@ -1,9 +1,12 @@
 #include <assert.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
+#include "./sudoku_generator.h"
 #include "./sudoku_grid.h"
 #include "./sudoku_solver.h"
 
@@ -54,14 +57,10 @@ bool recursive_solve(struct sudoku_grid* solution,
   }
 }
 
-bool solve_puzzle(char* file_name) {
-  struct sudoku_grid grid;
+bool solve_puzzle(const struct sudoku_grid* grid) {
+  struct sudoku_grid grid_copy;
 
-  FILE* file = fopen(file_name, "r");
-  assert(file != NULL);
-  bool status = read_in_puzzle(file, &grid);
-  assert(status);
-  fclose(file);
+  memcpy(&grid_copy, grid, sizeof(*grid));
 
   /* Change to event based in order to improve speed (on change to tile queue
     rechecking row, column, etc.). Have a backup full check on no events for
@@ -69,46 +68,46 @@ bool solve_puzzle(char* file_name) {
   unsigned int complexity_level = 0;
 
   /*struct sudoku_grid solution;
-  return recursive_solve(&solution, &grid, 0);*/
+  return recursive_solve(&solution, &grid_copy, 0);*/
 
   bool grid_changed;
   while (true) {
-    print_sudoku_grid(&grid);
-    printf("\n");
+    /*print_sudoku_grid(&grid_copy);
+    printf("\n");*/
 
     struct sudoku_grid grid_before;
-    memcpy(&grid_before, &grid, sizeof(grid_before));
+    memcpy(&grid_before, &grid_copy, sizeof(grid_before));
 
     if (complexity_level >= 0) {
       for (unsigned int i = 0; i < 9; ++i) {
-        row_eliminate(&grid, i);
-        column_eliminate(&grid, i);
-        box_eliminate(&grid, i);
+        row_eliminate(&grid_copy, i);
+        column_eliminate(&grid_copy, i);
+        box_eliminate(&grid_copy, i);
       }
 
       for (unsigned int i = 0; i < 9; ++i) {
-        row_single_tile(&grid, i);
-        column_single_tile(&grid, i);
-        box_single_tile(&grid, i);
+        row_single_tile(&grid_copy, i);
+        column_single_tile(&grid_copy, i);
+        box_single_tile(&grid_copy, i);
       }
     }
 
     if (complexity_level >= 1) {
       for (unsigned int i = 0; i < 9; ++i) {
-        row_box_elimination(&grid, i);
-        column_box_elimination(&grid, i);
+        row_box_elimination(&grid_copy, i);
+        column_box_elimination(&grid_copy, i);
       }
     }
 
     if (complexity_level >= 2) {
       for (unsigned int i = 0; i < 9; ++i) {
-        group_elimination(&grid, 0, i, 3);
-        group_elimination(&grid, 1, i, 3);
-        group_elimination(&grid, 2, i, 3);
+        group_elimination(&grid_copy, 0, i, 3);
+        group_elimination(&grid_copy, 1, i, 3);
+        group_elimination(&grid_copy, 2, i, 3);
       }
     }
 
-    grid_changed = memcmp(grid.values, grid_before.values,
+    grid_changed = memcmp(grid_copy.values, grid_before.values,
       9 * 9 * sizeof(unsigned short)) != 0;
 
     if (!grid_changed) {
@@ -120,16 +119,94 @@ bool solve_puzzle(char* file_name) {
     }
   }
 
-  return complete_valid_puzzle(&grid);
+  return complete_valid_puzzle(&grid_copy);
 }
+
+bool solve_puzzle_file_name(char* file_name) {
+  struct sudoku_grid grid;
+
+  FILE* file = fopen(file_name, "r");
+  assert(file != NULL);
+  bool status = read_in_puzzle(file, &grid);
+  assert(status);
+  fclose(file);
+
+  return solve_puzzle(&grid);
+}
+
+#define THREAD_COUNT 4
 
 int main(int argc, char** argv) {
   if (argc == 2) {
-    /*for (unsigned int i = 0; i < 1000; ++i) {
-      bool arg = solve_puzzle(argv[1]);
-      printf("%u\n", arg);
-    }*/
-    solve_puzzle(argv[1]);
+    if (strcmp("stats", argv[1]) == 0) {
+      pthread_t threads[THREAD_COUNT];
+      struct generator_params params;
+      params.difficulty = sudoku_difficulty_expert;
+      params.exit_thread = malloc(sizeof(bool));
+      params.queue = malloc(sizeof(struct fixed_queue_sudoku));
+      int mutex_status = pthread_mutex_init(&params.mutex, NULL);
+      assert(mutex_status == 0);
+      assert(params.exit_thread != NULL);
+      assert(params.queue != NULL);
+
+      params.queue->used_size = 0;
+      params.queue->first_unused = 0;
+
+      for (unsigned int i = 0; i < THREAD_COUNT; ++i) {
+        int status = pthread_create(threads + i, NULL, sudoku_generator_worker,
+          &params);
+        assert(status == 0);
+      }
+
+      unsigned int solved = 0;
+      unsigned int attempted = 0;
+
+      while (attempted < 2 * 1024) {
+        pthread_mutex_lock(&params.mutex);
+
+        if (params.queue->used_size > 0) {
+          struct sudoku_grid* grid
+            = params.queue->grids + params.queue->first_unused;
+          pthread_mutex_unlock(&params.mutex);
+          if (solve_puzzle(grid)) {
+            ++solved;
+          }
+          ++attempted;
+          pthread_mutex_lock(&params.mutex);
+          params.queue->first_unused = (params.queue->first_unused + 1)
+            % QUEUE_SIZE;
+          --params.queue->used_size;
+          unsigned int used_size = params.queue->used_size;
+          pthread_mutex_unlock(&params.mutex);
+
+          printf("Attempted: %4u Solved: %4u Used Size: %4u\n", attempted,
+            solved, used_size);
+        } else {
+          pthread_mutex_unlock(&params.mutex);
+
+          struct timespec ts;
+          ts.tv_sec = 0;
+          ts.tv_nsec = 50 * 1000 * 1000;
+          nanosleep(&ts, NULL);
+        }
+      }
+
+      pthread_mutex_lock(&params.mutex);
+      *params.exit_thread = true;
+      pthread_mutex_unlock(&params.mutex);
+
+      for (unsigned int i = 0; i < THREAD_COUNT; ++i) {
+        pthread_join(threads[i], NULL);
+      }
+
+      return 0;
+    } else {
+      /*for (unsigned int i = 0; i < 1000; ++i) {
+        bool arg = solve_puzzle_file_name(argv[1]);
+        printf("%u\n", arg);
+      }*/
+      solve_puzzle_file_name(argv[1]);
+    }
 
     return 0;
   } else {
