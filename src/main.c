@@ -72,8 +72,8 @@ bool solve_puzzle(const struct sudoku_grid* grid) {
 
   bool grid_changed;
   while (true) {
-    /*print_sudoku_grid(&grid_copy);
-    printf("\n");*/
+    print_sudoku_grid(&grid_copy);
+    printf("\n");
 
     struct sudoku_grid grid_before;
     memcpy(&grid_before, &grid_copy, sizeof(grid_before));
@@ -210,7 +210,10 @@ int main(int argc, char** argv) {
 
     return 0;
   } else {
-    printf("%s FILE\n", argc >= 1 ? argv[0] : "sudoku_solver");
+    printf("%s FILE - For attempting to solve a puzzle\n", argc >= 1 ? argv[0]
+      : "sudoku_solver");
+    printf("%s stats - For solving complexity statistics (recommend disabling printing in source code first)\n", argc >= 1 ? argv[0]
+      : "sudoku_solver");
     return 1;
   }
 }
